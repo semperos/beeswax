@@ -226,7 +226,7 @@
 
 (defn resolve-word
   [form env]
-  (-d "resolve" form env semperos.beeswax.Invocable)
+  (-d "resolve word?" form env)
   (or (get builtin-words (word-set form))
       (get env form)
       (and (instance? semperos.beeswax.Invocable form)
@@ -234,10 +234,14 @@
 
 (defn eval-form [form stack env]
   (if-let [word (resolve-word form env)]
-    {:stack (invoke word stack env)
-     :env env}
-    {:stack (conj stack form)
-     :env env}))
+    (do
+      (-d "evaling" word)
+      {:stack (invoke word stack env)
+       :env env})
+    (do
+      (-d "adding to stack" form (resolve-word form env))
+      {:stack (conj stack form)
+       :env env})))
 
 (def ^:const def-open '<def)
 (def ^:const def-close 'def>)
@@ -245,52 +249,52 @@
 (def ^:const quot-close '>>)
 
 (defn read-delimited
-  ([rdr eof delimiter] (read-delimited rdr eof delimiter []))
-  ([rdr eof delimiter definition]
-   (let [form (edn/read {:eof eof} rdr)]
-     (if-not (= form delimiter)
-       (cond
-         ;; Support quotations inside word definitions,
-         ;; but not other word definitions.
-         (= form quot-open)
-         (do
-           (-d "reading quotation within word/quotation")
-           (recur rdr eof delimiter (conj definition (->Quotation (read-delimited rdr eof quot-close)))))
+  ([tokens delimiter] (read-delimited tokens delimiter []))
+  ([tokens delimiter definition]
+   (if-let [form (first tokens)]
+     (let [tokens (next tokens)]
+       (if-not (= form delimiter)
+         (cond
+           ;; Support quotations inside word definitions,
+           ;; but not other word definitions.
+           (= form quot-open)
+           (let [_ (-d "parsing quotation within word/quotation")
+                 [quotation-definition tokens] (read-delimited tokens quot-close)
+                 quotation (->Quotation definition)]
+             (recur tokens delimiter (conj definition quotation)))
 
-         :else
-         (recur rdr eof delimiter (conj definition form)))
+           :else
+           (recur tokens delimiter (conj definition form)))
 
-       definition))))
+         [definition tokens]))
+     (throw (ex-info (str "Reached end of program before finding closing " (pr-str delimiter)))))))
 
 (defn interpret*
-  [rdr stack env]
-  (let [eof (Object.)
-        read' (fn [] (edn/read {:eof eof} rdr))]
-    (let [form (read')]
-      (-d "interpret form: " form (type form) stack env)
-      (if (= form eof)
-        [:OK stack]
-        (cond
-          (= form def-open)
-          (let [word-name (read')
-                _ (-d "reading word" word-name)
-                definition (read-delimited rdr eof def-close)]
-            (recur rdr stack (assoc env word-name (->Word word-name definition))))
+  [tokens stack env]
+  (if-let [form (first tokens)]
+    (let [tokens (next tokens)]
+      (cond
+        (= form def-open)
+        (let [word-name (first tokens)
+              _ (-d "parsing word definition" word-name)
+              tokens (next tokens)
+              [definition tokens] (read-delimited tokens def-close)]
+          (recur tokens stack (assoc env word-name (->Word word-name definition))))
 
-          (= form quot-open)
-          (let [definition (read-delimited rdr eof quot-close)]
-            (-d "read quotation with definition" definition)
-            (recur rdr (conj stack (->Quotation definition)) env))
+        (= form quot-open)
+        (let [[definition tokens] (read-delimited tokens quot-close)]
+          (recur tokens (conj stack (->Quotation definition)) env))
 
-          :else
-          (let [{:keys [stack env]} (eval-form form stack env)]
-            (recur rdr stack env)))))))
+        :else
+        (let [{:keys [stack env]} (eval-form form stack env)]
+          (recur tokens stack env))))
+    stack))
 
 (defn interpret
-  ([rdr] (interpret rdr []))
-  ([rdr stack] (interpret rdr stack {}))
-  ([rdr stack env]
-   (interpret* rdr stack env)))
+  ([tokens] (interpret tokens []))
+  ([tokens stack] (interpret tokens stack {}))
+  ([tokens stack env]
+   (interpret* tokens stack env)))
 
 (defn go
   ([] (go "beeswax.bx"))
@@ -298,7 +302,12 @@
   ([beeswax-resource {:keys [debug?] :as opts}]
    (with-open [rdr (LineNumberingPushbackReader.
                     (PushbackReader.
-                     (io/reader (io/resource beeswax-resource))))
-               ]
-     (let [tokens rdr]
+                     (io/reader (io/resource beeswax-resource))))]
+     (let [eof (Object.)
+           read' (fn [] (edn/read {:eof eof} rdr))
+           tokens (persistent!
+                   (loop [form (read') tokens (transient [])]
+                     (if (= form eof)
+                       tokens
+                       (recur (read') (conj! tokens form)))))]
        (interpret tokens)))))
