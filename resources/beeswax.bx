@@ -1,0 +1,33 @@
+;; -*- mode: clojure -*-
+
+;;;;;;;;;;;;;;;;;
+;; Definitions ;;
+;;;;;;;;;;;;;;;;;
+
+<def u/println ;; ( str -- )
+"\n" append print
+def>
+
+<def get-body ;; ( request -- request-body )
+:body swap get
+def>
+
+<def set-get-method ;; ( request -- get-request )
+:get :method rot set
+def>
+
+<def http-get ;; ( request -- get-request )
+set-get-method http-request
+def>
+
+
+;;;;;;;;;;;;;;;;;;
+;; Main Program ;;
+;;;;;;;;;;;;;;;;;;
+
+{:url "http://listingsvc-pool.vip.atl.primedia.com/v1/listings"
+ :query-params {:criteria {:zip "29483"}}
+ :as :json
+ :headers {"X-Application-Id" "ag/www"}}
+http-get
+get-body
