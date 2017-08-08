@@ -13,7 +13,7 @@ def>
 def>
 
 <def set-get-method ;; ( request -- get-request )
-:get :method rot set
+:get :method rot print-stack set
 def>
 
 <def http-get ;; ( request -- get-request )
@@ -25,9 +25,7 @@ def>
 ;; Main Program ;;
 ;;;;;;;;;;;;;;;;;;
 
-{:url "http://listingsvc-pool.vip.atl.primedia.com/v1/listings"
- :query-params {:criteria {:zip "29483"}}
- :as :json
- :headers {"X-Application-Id" "ag/www"}}
-http-get
-get-body
+{:one 2
+ :buckle-my "shoe"}
+interrupt
+count
