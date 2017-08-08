@@ -227,8 +227,8 @@
 (defn resolve-word
   [form env]
   (-d "resolve word?" form env)
-  (or (get builtin-words (word-set form))
-      (get env form)
+  (or (get env form)
+      (get builtin-words (word-set form))
       (and (instance? semperos.beeswax.Invocable form)
            form)))
 
