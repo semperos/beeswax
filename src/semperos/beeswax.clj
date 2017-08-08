@@ -44,6 +44,12 @@
     (-d "append** bindings" a b ret stack)
     (conj stack ret)))
 
+(defn count**
+  [stack _]
+  (let [x (peek stack)
+        stack (pop stack)]
+    (conj stack (count x))))
+
 (defn dup**
   [stack _]
   (let [x (peek stack)]
@@ -118,6 +124,15 @@
     (print x)
     stack))
 
+(defn print-stack**
+  [stack _]
+  (print "Stack of" (count stack) "items:" (pr-str stack))
+  stack)
+
+(defn interrupt**
+  [stack _]
+  (conj stack :bx/interrupt))
+
 (defn read-file**
   [stack _]
   (-d "read-file** stack" stack)
@@ -175,14 +190,17 @@
 (def builtin-words
   {
    'append append**
+   'count count**
    'dup dup**
    'eq eq**
    'get get**
    'http-request http-request**
    'if if**
+   'interrupt interrupt**
    'parse-json parse-json**
    'parse-yaml parse-yaml**
    'print print**
+   'print-stack print-stack**
    'read-file read-file**
    'regex-match regex-match**
    'rot rot**
@@ -233,15 +251,24 @@
            form)))
 
 (defn eval-form [form stack env]
-  (if-let [word (resolve-word form env)]
-    (do
-      (-d "evaling" word)
-      {:stack (invoke word stack env)
-       :env env})
-    (do
-      (-d "adding to stack" form (resolve-word form env))
-      {:stack (conj stack form)
-       :env env})))
+  (let [word (resolve-word form env)]
+    (cond
+      word
+      (do
+        (-d "evaling" word)
+        {:stack (invoke word stack env)
+         :env env})
+
+      (symbol? form)
+      (throw (ex-info (str "Cannot resolve symbol " form ", you either misspelled or forgot to implement a word.")
+                      {:symbol form
+                       :error :unresolved-symbol}))
+
+      :else
+      (do
+        (-d "adding to stack" form (resolve-word form env))
+        {:stack (conj stack form)
+         :env env}))))
 
 (def ^:const def-open '<def)
 (def ^:const def-close 'def>)
@@ -272,7 +299,9 @@
 (defn interpret*
   [tokens stack env]
   (if-let [form (first tokens)]
-    (let [tokens (next tokens)]
+    (let [_ (-d "form:" form)
+          orig-tokens tokens
+          tokens (next tokens)]
       (cond
         (= form def-open)
         (let [word-name (first tokens)
@@ -287,13 +316,18 @@
 
         :else
         (let [{:keys [stack env]} (eval-form form stack env)]
-          (recur tokens stack env))))
-    stack))
+          (if (= (peek stack) :bx/interrupt)
+            {:rest-of-program orig-tokens
+             :stack (pop stack)}
+            (recur tokens stack env)))))
+    {:rest-of-program []
+     :stack stack}))
 
 (defn interpret
   ([tokens] (interpret tokens []))
   ([tokens stack] (interpret tokens stack {}))
   ([tokens stack env]
+   (-d "Starting interpeter")
    (interpret* tokens stack env)))
 
 (defn go
