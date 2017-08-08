@@ -2,7 +2,14 @@
 
 Concatenative language for dynamic platforms.
 
-Goal: Be trivially portable to dynamically-typed, garbage-collected platforms.
+Goals:
+
+* Be trivially portable to dynamically-typed, garbage-collected platforms.
+* Be interruptable. A program can run to a certain point, stop, then pick up on a different system.
+
+## Design Thoughts
+
+* Each word could have a set of functionality tags that indicate, at a system level, what the word does, needs access to, etc. (think GUI vs. headless environment, for example)
 
 ## License
 
