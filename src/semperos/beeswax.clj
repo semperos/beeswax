@@ -1,12 +1,12 @@
 (ns semperos.beeswax
-  (:require [clojure.java.io :as io]
-            [clojure.tools.reader.edn :as edn]
-            [clj-yaml.core :as yaml]
-            [clojure.string :as str]
+  (:require [cheshire.core :as json]
             [clj-http.client :as http]
-            [cheshire.core :as json])
-  (:import [java.io PushbackReader]
-           [clojure.lang LineNumberingPushbackReader]))
+            [clj-yaml.core :as yaml]
+            [clojure.java.io :as io]
+            [clojure.string :as str]
+            [clojure.tools.reader.edn :as edn])
+  (:import [clojure.lang LineNumberingPushbackReader]
+           [java.io PushbackReader]))
 
 (def debug? (atom false))
 
@@ -44,11 +44,13 @@
     (-d "append** bindings" a b ret stack)
     (conj stack ret)))
 
-(defn count**
-  [stack _]
-  (let [x (peek stack)
-        stack (pop stack)]
-    (conj stack (count x))))
+(defn ar1 [f]
+  (fn [stack env]
+    (let [x (peek stack)
+          stack (pop stack)]
+      (conj stack (f x)))))
+
+(def count** (ar1 count))
 
 (defn dup**
   [stack _]
@@ -75,12 +77,7 @@
     (-d "get** bindings" associative k ret)
     (conj stack ret)))
 
-(defn http-request**
-  [stack _]
-  (let [request-map (peek stack)
-        stack (pop stack)
-        ret (http/request request-map)]
-    (conj stack ret)))
+(def http-request** (ar1 http/request))
 
 (defn if**
   [stack env]
@@ -99,23 +96,9 @@
     (-d "if** bindings" condition t-quot f-quot ret)
     (:stack ret)))
 
-(defn parse-json**
-  [stack _]
-  (-d "parse-json** stack" stack)
-  (let [json-str (peek stack)
-        stack (pop stack)
-        ret (json/parse-string json-str)]
-    (-d "parse-json** bindings" json-str ret stack)
-    (conj stack ret)))
+(def parse-json** (ar1 json/parse-string))
 
-(defn parse-yaml**
-  [stack _]
-  (-d "parse-yaml** stack" stack)
-  (let [yaml-str (peek stack)
-        stack (pop stack)
-        ret (yaml/parse-string yaml-str)]
-    (-d "parse-yaml** bindings" yaml-str ret stack)
-    (conj stack ret)))
+(def parse-yaml** (ar1 yaml/parse-string))
 
 (defn print**
   [stack _]
@@ -133,14 +116,7 @@
   [stack _]
   (conj stack :bx/interrupt))
 
-(defn read-file**
-  [stack _]
-  (-d "read-file** stack" stack)
-  (let [slurpable (peek stack)
-        stack (pop stack)
-        ret (slurp slurpable)]
-    (-d "read-file** bindings" slurpable ret stack)
-    (conj stack ret)))
+(def read-file** (ar1 slurp))
 
 (defn regex-match**
   [stack _]
@@ -187,26 +163,33 @@
         ret (type x)]
     (conj stack ret)))
 
+(defn clj**
+  [stack _]
+  (conj stack :bx/clj))
+
+(declare invoke**)
 (def builtin-words
   {
-   'append append**
-   'count count**
-   'dup dup**
-   'eq eq**
-   'get get**
+   'append       append**
+   'clj          clj**
+   'count        count**
+   'dup          dup**
+   'eq           eq**
+   'get          get**
    'http-request http-request**
-   'if if**
-   'interrupt interrupt**
-   'parse-json parse-json**
-   'parse-yaml parse-yaml**
-   'print print**
-   'print-stack print-stack**
-   'read-file read-file**
-   'regex-match regex-match**
-   'rot rot**
-   'set set**
-   'swap swap**
-   'type type**
+   'if           if**
+   'interrupt    interrupt**
+   'invoke       invoke**
+   'parse-json   parse-json**
+   'parse-yaml   parse-yaml**
+   'print        print**
+   'print-stack  print-stack**
+   'read-file    read-file**
+   'regex-match  regex-match**
+   'rot          rot**
+   'set          set**
+   'swap         swap**
+   'type         type**
    ;; 'apply apply**
    })
 
@@ -242,6 +225,11 @@
   (invoke [this stack env]
     (this stack env)))
 
+(defn invoke**
+  [stack env]
+  (let [a (peek stack)]
+    (invoke a stack env)))
+
 (defn resolve-word
   [form env]
   (-d "resolve word?" form env)
@@ -260,7 +248,7 @@
          :env env})
 
       (symbol? form)
-      (throw (ex-info (str "Cannot resolve symbol " form ", you either misspelled or forgot to implement a word.")
+      (throw (ex-info (str "Cannot resolve symbol " form ", you either misspelled it or forgot to implement a word.")
                       {:symbol form
                        :error :unresolved-symbol}))
 
@@ -314,6 +302,17 @@
         (let [[definition tokens] (read-delimited tokens quot-close)]
           (recur tokens (conj stack (->Quotation definition)) env))
 
+        (#{'clj :bx/clj} form)
+        (let [x (eval (first tokens))]
+          (println "WHOA" (class x))
+          (recur (next tokens)
+                 (if (fn? x)
+                   (let [item (peek stack)
+                         stack (pop stack)]
+                     (conj stack (x item)))
+                   (conj stack x))
+                 env))
+
         :else
         (let [{:keys [stack env]} (eval-form form stack env)]
           (if (= (peek stack) :bx/interrupt)
@@ -329,6 +328,8 @@
   ([tokens stack env]
    (-d "Starting interpeter")
    (interpret* tokens stack env)))
+
+(def i interpret)
 
 (defn go
   ([] (go "beeswax.bx"))

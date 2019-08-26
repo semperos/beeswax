@@ -3,7 +3,7 @@
   :url "https://github.com/semperos/beeswax"
   :license {:name "Apache 2.0"
             :url "http://www.apache.org/licenses/LICENSE-2.0.html"}
-  :dependencies [[org.clojure/clojure "1.9.0-alpha17"]
+  :dependencies [[org.clojure/clojure "1.10.1"]
                  [org.clojure/tools.reader "1.0.3"]
                  [cheshire "5.7.1"]
                  [clj-yaml "0.4.0"]

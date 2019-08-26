@@ -1,0 +1,3 @@
+;; -*- mode: clojure -*-
+
+<def println "\n" append print def>
